@@ -1,0 +1,82 @@
+FROM ubuntu:16.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+#         build-essential \
+#         cmake \
+#         git \
+#         curl \
+#         nano \
+        wget
+#         unzip \
+#         ca-certificates \
+#         jq \
+#         locales \
+#         apt-transport-https \
+#         software-properties-common \
+#         sudo \
+#         tmux
+# WORKDIR /usr/bin/
+RUN wget -O azcopy_v10.tar.gz https://aka.ms/downloadazcopy-v10-linux --no-check-certificate && tar -xf azcopy_v10.tar.gz --strip-components=1
+RUN cp ./azcopy /usr/bin/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        curl \
+        nano \
+        unzip \
+        ca-certificates \
+        jq \
+        locales \
+        apt-transport-https \
+        software-properties-common \
+        sudo \
+        tmux
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - && \
+    apt-key fingerprint 0EBFCD88 && \
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+                        $(lsb_release -cs) \
+                        stable" &&\
+    apt-get update && apt-get install -y --no-install-recommends docker-ce
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+COPY environment.yml .
+COPY azure_requirements.txt .
+ENV ENV_NAME=py37
+RUN curl -L -o ~/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh  && \
+     chmod +x ~/miniconda.sh && \
+     ~/miniconda.sh -b -p /opt/conda && \
+     rm ~/miniconda.sh && \
+     /opt/conda/bin/conda install numpy pyyaml scipy ipython mkl && \
+     /opt/conda/bin/conda install -c soumith magma-cuda90 && \
+    #  /opt/conda/bin/conda install -c hcc azcopy  && \
+     /opt/conda/bin/conda clean -ya &&\
+     /opt/conda/bin/conda env create -q --name $ENV_NAME -f environment.yml && \
+     /opt/conda/bin/conda clean -ya && \
+     ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+     echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
+     echo "conda activate $ENV_NAME" >> ~/.bashrc
+ENV PATH /opt/conda/envs/$ENV_NAME/bin:/opt/conda/bin:$PATH
+RUN ["/bin/bash", "-c", "pip install -r azure_requirements.txt --ignore-installed PyYAML"]
+
+COPY jupyter_notebook_config.py /root/.jupyter/
+SHELL ["/bin/bash", "-c"]
+RUN jupyter nbextension install --py --user azureml.widgets && \
+    jupyter nbextension enable --py --user azureml.widgets
+# Adding nvidia-docker alias
+RUN echo -e '#!/bin/bash\ndocker "$@"' > /usr/bin/nvidia-docker && \
+    chmod +x /usr/bin/nvidia-docker
+ENV PYTHONPATH /workspace/scripts:/workspace/control/src:$PYTHONPATH
+# template
+# benchmark
+# imagenet
+# pytorch benchmark
+# pytorch imagenet
+# Completion script
+COPY bash.completion /etc/bash_completion.d/
+RUN echo "source /etc/bash_completion.d/bash.completion" >> /root/.bashrc
+# Tmux
+COPY tmux.conf /root/.tmux.conf
+WORKDIR /workspace
+CMD /bin/bash
